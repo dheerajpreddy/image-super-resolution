@@ -11,11 +11,8 @@ import torch.nn.functional as F
 from os import listdir, makedirs, remove
 from os.path import exists, join, basename
 from PIL import Image, ImageFilter
-from six.moves import urllib
-import tarfile
 import argparse
 from math import log10
-
 
 
 class SRCNN(nn.Module):
@@ -47,6 +44,7 @@ class SRCNN(nn.Module):
 
 		return out
 
+
 	def train(self, training_data_loader=None):
 		if (training_data_loader is None):
 			training_data_loader = self.training_data_loader
@@ -64,8 +62,6 @@ class SRCNN(nn.Module):
 
 			self.optimizer.zero_grad()
 			out = self.forward(input)
-
-			# loss = self.criterion(out[:, :, 12:-12, 12:-12], target[:, :, 12:-12, 12:-12])
 			loss = self.criterion(out, target)
 			epoch_loss += loss.data
 			loss.backward()
@@ -76,8 +72,6 @@ class SRCNN(nn.Module):
 			total += 1
 
 			print("===> Epoch[{}]({}/{}): Loss: {:.4f} PSNR: {:.4f} dB".format(self.epoch, iteration, len(training_data_loader), loss.data, psnr))
-			# print(len(training_data_loader))
-
 		print("===> Epoch {} Complete: Avg. Loss: {:.4f} Avg. PSNR: {:.4f} dB".format(self.epoch, epoch_loss / total, avg_psnr / total))
 		self.epoch += 1
 
@@ -110,12 +104,10 @@ class SRCNN(nn.Module):
 				inputImg = Image.merge('YCbCr', (inputImg, CB, CR))
 				inputImg.save("./results/{}-input.jpg".format(imgIdx))
 
-				# outImg = tt(out[i].cpu())
 				outImg = tt(out[i].cpu()).convert('L')
 				outImg = Image.merge('YCbCr', (outImg, CB, CR))
 				outImg.save("./results/{}-out.jpg".format(imgIdx))
 
-				# targetImg = tt(target[i].cpu())
 				targetImg = tt(target[i].cpu()).convert('L')
 				targetImg = Image.merge('YCbCr', (targetImg, CB, CR))
 				targetImg.save("./results/{}-target.jpg".format(imgIdx))
@@ -134,7 +126,6 @@ class SRCNN(nn.Module):
 			total += 1
 
 			# print("===> Test[{}]({}/{}): Loss: {:.4f} PSNR: {:.4f} dB".format(self.epoch, iteration, len(test_data_loader), loss.data, psnr))
-			# print(len(test_data_loader))
 
 		print("===> Test {} Complete: Avg. Loss: {:.4f} Avg. PSNR: {:.4f} dB".format(self.epoch, epoch_loss / total, avg_psnr / total))
 		print("===> Bicubic Test {} Complete: Avg. Loss: {:.4f} Avg. PSNR: {:.4f} dB".format(self.epoch, bicubic_epoch_loss / total, bicubic_avg_psnr / total))
@@ -159,10 +150,6 @@ def is_image_file(filename):
 def load_img(filepath):
 	img = Image.open(filepath).convert('YCbCr')
 	return img
-	# y, cb, cr = img.split()
-	# print(y.size)
-
-	# return y
 
 
 class DatasetFromFolder(data.Dataset):
@@ -178,7 +165,6 @@ class DatasetFromFolder(data.Dataset):
 
 		target = input.copy()
 		if self.input_transform:
-			# print(input.mode)
 			input = input.filter(ImageFilter.GaussianBlur(2))
 			input = self.input_transform(input)
 
@@ -191,30 +177,6 @@ class DatasetFromFolder(data.Dataset):
 
 	def __len__(self):
 		return len(self.image_filenames)
-
-
-def download_bsd500(dest="dataset"):
-	output_image_dir = join(dest, "BSR/BSDS500/data/images")
-
-	if not exists(output_image_dir):
-		makedirs(dest)
-		url = "http://www.eecs.berkeley.edu/Research/Projects/CS/vision/grouping/BSR/BSR_bsds500.tgz"
-		print("downloading url ", url)
-
-		data = urllib.request.urlopen(url)
-
-		file_path = join(dest, basename(url))
-		with open(file_path, 'wb') as f:
-			f.write(data.read())
-
-		print("Extracting data")
-		with tarfile.open(file_path) as tar:
-			for item in tar:
-				tar.extract(item, dest)
-
-		remove(file_path)
-
-	return output_image_dir
 
 
 def calculate_valid_crop_size(crop_size, upscale_factor):
@@ -243,10 +205,6 @@ def target_transform(crop_size):
 
 
 def get_training_set(upscale_factor):
-	root_dir = download_bsd500()
-
-	train_dir = join(root_dir, "train")
-	# train_dir = "./dataset/SR_training_datasets/BSDS200"
 	train_dir = "./dataset/T91-subimages"
 	crop_size = calculate_valid_crop_size(32, upscale_factor)
 
@@ -256,8 +214,6 @@ def get_training_set(upscale_factor):
 
 
 def get_test_set(upscale_factor):
-	root_dir = download_bsd500()
-	test_dir = join(root_dir, "test")
 	test_dir = "./dataset/Set5"
 	crop_size = calculate_valid_crop_size(32, upscale_factor)
 
@@ -278,7 +234,7 @@ if __name__ == '__main__':
 
 	train_set = get_training_set(3)
 	test_set = get_test_set(3)
-	training_data_loader = DataLoader(dataset=train_set, num_workers=4, batch_size=4, shuffle=True)
+	training_data_loader = DataLoader(dataset=train_set, num_workers=4, batch_size=16, shuffle=True)
 	testing_data_loader = DataLoader(dataset=test_set, num_workers=4, batch_size=1, shuffle=False)
 
 

@@ -1,0 +1,4 @@
+===> Epoch 77 Complete: Avg. Loss: 0.0035 Avg. PSNR: 24.7174 dB
+Checkpoint saved to model_epoch_77.pth
+===> Test 78 Complete: Avg. Loss: 0.0021 Avg. PSNR: 28.3330 dB
+===> Bicubic Test 78 Complete: Avg. Loss: 0.0002 Avg. PSNR: 26.4436 dB
