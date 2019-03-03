@@ -22,13 +22,13 @@ class SRCNN(nn.Module):
 		super(SRCNN, self).__init__()
 
 		# Patch extraction and representation
-		self.conv1 = nn.Conv2d(1, 64, kernel_size=9, padding=4)
+		self.conv1 = nn.Conv2d(3, 64, kernel_size=9, padding=4)
 
 		# Non linear mapping
 		self.conv2 = nn.Conv2d(64, 32, kernel_size=1, padding=0)
 
 		# Reconstruction
-		self.conv3 = nn.Conv2d(32, 1, kernel_size=5, padding=2)
+		self.conv3 = nn.Conv2d(32, 3, kernel_size=5, padding=2)
 
 
 		# Init values
@@ -58,8 +58,7 @@ class SRCNN(nn.Module):
 		avg_psnr = 0
 		total = 0
 		for iteration, batch in enumerate(training_data_loader, 1):
-			(input, cb, cr), target = batch[0], Variable(batch[1])
-			input = Variable(input)
+			input, target = Variable(batch[0]), Variable(batch[1])
 			if self.use_cuda:
 				input = input.cuda()
 				target = target.cuda()
@@ -67,8 +66,10 @@ class SRCNN(nn.Module):
 			self.optimizer.zero_grad()
 			out = self.forward(input)
 
-			out = torch.cat((out.cuda(), cb.cuda(), cr.cuda()), dim=1)
-			target = torch.cat((target, cb.cuda(), cr.cuda()), dim=1)
+			if self.use_cuda:
+				out = out.cuda()
+			# out = torch.cat((out.cuda(), cb.cuda(), cr.cuda()), dim=1)
+			# target = torch.cat((target, cb.cuda(), cr.cuda()), dim=1)
 
 			loss = self.criterion(vgg16(out), vgg16(target))
 			epoch_loss += loss.data
@@ -97,27 +98,25 @@ class SRCNN(nn.Module):
 		total = 0
 		imgIdx = 1
 		for iteration, batch in enumerate(test_data_loader, 1):
-			(input, cb, cr), target = batch[0], Variable(batch[1])
-			input = Variable(input)
+			input, target = Variable(batch[0]), Variable(batch[1])
 
 			if self.use_cuda:
 				input = input.cuda()
 				target = target.cuda()
+
 			out = self.forward(input)
 
+			if self.use_cuda:
+				out = out.cuda()
+
 			for i, currImg in enumerate(out):
-				CB = tt(cb[i]).convert('L')
-				CR = tt(cr[i]).convert('L')
-				inputImg = tt(input[i].cpu()).convert('L')
-				inputImg = Image.merge('YCbCr', (inputImg, CB, CR))
+				inputImg = tt(input[i].cpu())
 				inputImg.save("./results/{}-input.jpg".format(imgIdx))
 
-				outImg = tt(out[i].clamp_(0, 1).cpu()).convert('L')
-				outImg = Image.merge('YCbCr', (outImg, CB, CR))
+				outImg = tt(out[i].clamp_(0, 1).cpu())
 				outImg.save("./results/{}-out.jpg".format(imgIdx))
 
-				targetImg = tt(target[i].cpu()).convert('L')
-				targetImg = Image.merge('YCbCr', (targetImg, CB, CR))
+				targetImg = tt(target[i].cpu())
 				targetImg.save("./results/{}-target.jpg".format(imgIdx))
 
 				imgIdx += 1
@@ -157,7 +156,8 @@ def is_image_file(filename):
 
 
 def load_img(filepath):
-	img = Image.open(filepath).convert('YCbCr')
+	img = Image.open(filepath)
+	# .convert('YCbCr')
 	return img
 
 
@@ -170,7 +170,7 @@ class DatasetFromFolder(data.Dataset):
 		self.target_transform = target_transform
 
 	def __getitem__(self, index):
-		input, cb, cr = load_img(self.image_filenames[index]).split()
+		input = load_img(self.image_filenames[index])
 
 		target = input.copy()
 		if self.input_transform:
@@ -179,10 +179,8 @@ class DatasetFromFolder(data.Dataset):
 
 		if self.target_transform:
 			target = self.target_transform(target)
-			cb = self.target_transform(cb)
-			cr = self.target_transform(cr)
 
-		return (input, cb, cr), target
+		return input, target
 
 	def __len__(self):
 		return len(self.image_filenames)
@@ -231,9 +229,7 @@ def get_test_set(upscale_factor):
 							 target_transform=input_transform(upscale_factor=upscale_factor))
 
 if __name__ == '__main__':
-	# print(vgg16.children())
 	vgg16 = torch.nn.Sequential(*list(vgg16.children())[0][:16])
-	# print(vgg16)
 
 	use_cuda = torch.cuda.is_available()
 	if (use_cuda):
