@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from torchvision.transforms import Compose, CenterCrop, ToTensor, Scale, Resize
 import torchvision.transforms as transforms
+import torch.nn.functional as F
 
 from os import listdir, makedirs, remove
 from os.path import exists, join, basename
@@ -23,11 +24,9 @@ class SRCNN(nn.Module):
 
 		# Patch extraction and representation
 		self.conv1 = nn.Conv2d(1, 64, kernel_size=9, padding=4)
-		self.relu1 = nn.ReLU()
 
 		# Non linear mapping
 		self.conv2 = nn.Conv2d(64, 32, kernel_size=1, padding=0)
-		self.relu2 = nn.ReLU()
 
 		# Reconstruction
 		self.conv3 = nn.Conv2d(32, 1, kernel_size=5, padding=2)
@@ -35,17 +34,15 @@ class SRCNN(nn.Module):
 
 		# Init values
 		self.epoch = 1;
-		self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
+		self.optimizer = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=0.001)
 		self.criterion = nn.MSELoss()
 		self.training_data_loader = None
 		self.test_data_loader = None
 
 
 	def forward(self, x):
-		out = self.conv1(x)
-		out = self.relu1(out)
-		out = self.conv2(out)
-		out = self.relu2(out)
+		out = F.relu(self.conv1(x))
+		out = F.relu(self.conv2(out))
 		out = self.conv3(out)
 
 		return out
@@ -58,9 +55,9 @@ class SRCNN(nn.Module):
 		epoch_loss = 0
 		avg_psnr = 0
 		total = 0
-		saved = False
 		for iteration, batch in enumerate(training_data_loader, 1):
-			input, target = Variable(batch[0]), Variable(batch[1])
+			(input, cb, cr), target = batch[0], Variable(batch[1])
+			input = Variable(input)
 			if self.use_cuda:
 				input = input.cuda()
 				target = target.cuda()
@@ -68,13 +65,8 @@ class SRCNN(nn.Module):
 			self.optimizer.zero_grad()
 			out = self.forward(input)
 
-			if saved == False:
-				saved = True
-				torch.save(input, "input.tensor")
-				torch.save(out, "out.tensor")
-				torch.save(target, "target.tensor")
-
-			loss = self.criterion(out[:, :, 12:-12, 12:-12], target[:, :, 12:-12, 12:-12])
+			# loss = self.criterion(out[:, :, 12:-12, 12:-12], target[:, :, 12:-12, 12:-12])
+			loss = self.criterion(out, target)
 			epoch_loss += loss.data
 			loss.backward()
 			self.optimizer.step()
@@ -103,22 +95,31 @@ class SRCNN(nn.Module):
 		total = 0
 		imgIdx = 1
 		for iteration, batch in enumerate(test_data_loader, 1):
-			input, target = Variable(batch[0]), Variable(batch[1])
+			(input, cb, cr), target = batch[0], Variable(batch[1])
+			input = Variable(input)
+
 			if self.use_cuda:
 				input = input.cuda()
 				target = target.cuda()
 			out = self.forward(input)
 
 			for i, currImg in enumerate(out):
-				temp = input[i].cpu()
-				print(temp.shape)
-				inputImg = tt(temp)
-				print(inputImg.size)
+				CB = tt(cb[i]).convert('L')
+				CR = tt(cr[i]).convert('L')
+				inputImg = tt(input[i].cpu()).convert('L')
+				inputImg = Image.merge('YCbCr', (inputImg, CB, CR))
 				inputImg.save("./results/{}-input.jpg".format(imgIdx))
-				outImg = tt(out[i].cpu())
+
+				# outImg = tt(out[i].cpu())
+				outImg = tt(out[i].cpu()).convert('L')
+				outImg = Image.merge('YCbCr', (outImg, CB, CR))
 				outImg.save("./results/{}-out.jpg".format(imgIdx))
-				targetImg = tt(target[i].cpu())
+
+				# targetImg = tt(target[i].cpu())
+				targetImg = tt(target[i].cpu()).convert('L')
+				targetImg = Image.merge('YCbCr', (targetImg, CB, CR))
 				targetImg.save("./results/{}-target.jpg".format(imgIdx))
+
 				imgIdx += 1
 
 			loss = self.criterion(out, target)
@@ -156,11 +157,12 @@ def is_image_file(filename):
 
 
 def load_img(filepath):
-	img = Image.open(filepath)
-	# .convert('YCbCr')
-	# y, cb, cr = img.split()
-
+	img = Image.open(filepath).convert('YCbCr')
 	return img
+	# y, cb, cr = img.split()
+	# print(y.size)
+
+	# return y
 
 
 class DatasetFromFolder(data.Dataset):
@@ -172,17 +174,20 @@ class DatasetFromFolder(data.Dataset):
 		self.target_transform = target_transform
 
 	def __getitem__(self, index):
-		input = load_img(self.image_filenames[index])
+		input, cb, cr = load_img(self.image_filenames[index]).split()
+
 		target = input.copy()
 		if self.input_transform:
 			# print(input.mode)
 			input = input.filter(ImageFilter.GaussianBlur(2))
-
 			input = self.input_transform(input)
+
 		if self.target_transform:
 			target = self.target_transform(target)
+			cb = self.target_transform(cb)
+			cr = self.target_transform(cr)
 
-		return input, target
+		return (input, cb, cr), target
 
 	def __len__(self):
 		return len(self.image_filenames)
@@ -241,8 +246,9 @@ def get_training_set(upscale_factor):
 	root_dir = download_bsd500()
 
 	train_dir = join(root_dir, "train")
-	train_dir = "./dataset/SR_training_datasets/BSDS200"
-	crop_size = calculate_valid_crop_size(256, upscale_factor)
+	# train_dir = "./dataset/SR_training_datasets/BSDS200"
+	train_dir = "./dataset/T91-subimages"
+	crop_size = calculate_valid_crop_size(32, upscale_factor)
 
 	return DatasetFromFolder(train_dir,
 							 input_transform=input_transform(crop_size, upscale_factor),
@@ -275,6 +281,7 @@ if __name__ == '__main__':
 	training_data_loader = DataLoader(dataset=train_set, num_workers=4, batch_size=4, shuffle=True)
 	testing_data_loader = DataLoader(dataset=test_set, num_workers=4, batch_size=1, shuffle=False)
 
+
 	# srcnn = torch.load("./model_epoch_1.pth")
 	# print(dir(srcnn))
 	srcnn = SRCNN()
@@ -282,6 +289,7 @@ if __name__ == '__main__':
 	if (use_cuda):
 		srcnn.set_cuda()
 
+	print("TRAINING")
 	for epoch in range(150):
 		srcnn.train(training_data_loader)
 		srcnn.save_checkpoint()
