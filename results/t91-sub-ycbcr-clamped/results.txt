@@ -1,0 +1,4 @@
+===> Epoch 60 Complete: Avg. Loss: 0.0026 Avg. PSNR: 26.0185 dB
+Checkpoint saved to model_epoch_60.pth
+===> Test 61 Complete: Avg. Loss: 0.0021 Avg. PSNR: 28.1654 dB
+===> Bicubic Test 61 Complete: Avg. Loss: 0.0002 Avg. PSNR: 26.4436 dB

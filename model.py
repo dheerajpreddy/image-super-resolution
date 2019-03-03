@@ -31,7 +31,7 @@ class SRCNN(nn.Module):
 
 		# Init values
 		self.epoch = 1;
-		self.optimizer = optim.Adam(self.parameters(), lr=learning_rate, weight_decay=0.001)
+		self.optimizer = optim.Adam(self.parameters(), lr=learning_rate)
 		self.criterion = nn.MSELoss()
 		self.training_data_loader = None
 		self.test_data_loader = None
@@ -104,7 +104,9 @@ class SRCNN(nn.Module):
 				inputImg = Image.merge('YCbCr', (inputImg, CB, CR))
 				inputImg.save("./results/{}-input.jpg".format(imgIdx))
 
-				outImg = tt(out[i].cpu()).convert('L')
+				outImg = tt(out[i].clamp_(0, 1).cpu()).convert('L')
+				print("min", torch.min(out[i]))
+				print("max", torch.max(out[i]))
 				outImg = Image.merge('YCbCr', (outImg, CB, CR))
 				outImg.save("./results/{}-out.jpg".format(imgIdx))
 
