@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from torch.autograd import Variable
 from torchvision.transforms import Compose, CenterCrop, ToTensor, Scale, Resize
 import torchvision.transforms as transforms
+import torchvision.models as models
 import torch.nn.functional as F
 
 from os import listdir, makedirs, remove
@@ -14,6 +15,7 @@ from PIL import Image, ImageFilter
 import argparse
 from math import log10
 
+vgg16 = models.vgg16(pretrained=True)
 
 class SRCNN(nn.Module):
 	def __init__(self, upscale_factor=3, learning_rate=0.0001):
@@ -50,6 +52,8 @@ class SRCNN(nn.Module):
 			training_data_loader = self.training_data_loader
 		self.training_data_loader = training_data_loader
 
+		tt = transforms.ToPILImage()
+
 		epoch_loss = 0
 		avg_psnr = 0
 		total = 0
@@ -62,7 +66,11 @@ class SRCNN(nn.Module):
 
 			self.optimizer.zero_grad()
 			out = self.forward(input)
-			loss = self.criterion(out, target)
+
+			out = torch.cat((out.cuda(), cb.cuda(), cr.cuda()), dim=1)
+			target = torch.cat((target, cb.cuda(), cr.cuda()), dim=1)
+
+			loss = self.criterion(vgg16(out), vgg16(target))
 			epoch_loss += loss.data
 			loss.backward()
 			self.optimizer.step()
@@ -105,8 +113,6 @@ class SRCNN(nn.Module):
 				inputImg.save("./results/{}-input.jpg".format(imgIdx))
 
 				outImg = tt(out[i].clamp_(0, 1).cpu()).convert('L')
-				print("min", torch.min(out[i]))
-				print("max", torch.max(out[i]))
 				outImg = Image.merge('YCbCr', (outImg, CB, CR))
 				outImg.save("./results/{}-out.jpg".format(imgIdx))
 
@@ -137,6 +143,7 @@ class SRCNN(nn.Module):
 		self.cuda()
 		self.criterion = self.criterion.cuda()
 		self.use_cuda = True
+		vgg16.cuda()
 
 	def save_checkpoint(self):
 		model_out_path = "model_epoch_{}.pth".format(self.epoch - 1)
@@ -224,7 +231,9 @@ def get_test_set(upscale_factor):
 							 target_transform=input_transform(upscale_factor=upscale_factor))
 
 if __name__ == '__main__':
-
+	# print(vgg16.children())
+	vgg16 = torch.nn.Sequential(*list(vgg16.children())[0][:16])
+	# print(vgg16)
 
 	use_cuda = torch.cuda.is_available()
 	if (use_cuda):
